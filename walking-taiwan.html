@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣步履 - 帶我一起走</title>
+    <!-- 引入地圖樣式 Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- 引入 Tailwind CSS 美化介面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 12px; z-index: 1; }
+        .custom-icon { font-size: 24px; text-align: center; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="pb-10">
+
+    <!-- 標題區 -->
+    <div class="bg-blue-600 text-white p-6 text-center shadow-lg">
+        <h1 class="text-3xl font-bold mb-2">台灣步履 TW Walker</h1>
+        <p class="text-sm opacity-90">10 週｜75 萬步｜用雙腳把每一步走成故事</p>
+    </div>
+
+    <div class="max-w-md mx-auto mt-6 px-4">
+        
+        <!-- 輸入區 -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-6">
+            <label class="block text-gray-700 font-bold mb-2">📊 輸入目前的累積總步數</label>
+            <div class="flex gap-2">
+                <input type="number" id="inputSteps" placeholder="例如：150000" class="flex-1 p-3 border rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="updateProgress()" class="bg-blue-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-600 transition">更新</button>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">* 請打開手機健康App，查看從 12/8 至今的總步數填入</p>
+        </div>
+
+        <!-- 狀態儀表板 -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-4">
+                <div>
+                    <p class="text-gray-500 text-sm">目前位置</p>
+                    <h2 class="text-2xl font-bold text-blue-800" id="currentLocation">準備出發</h2>
+                </div>
+                <div class="text-right">
+                    <p class="text-gray-500 text-sm">目標進度</p>
+                    <h2 class="text-xl font-bold" id="progressPercent">0%</h2>
+                </div>
+            </div>
+            
+            <div>
+                <p class="text-gray-500 text-sm mb-1">本週目標 (<span id="currentWeekDate">檢查中...</span>)</p>
+                <div class="w-full bg-gray-200 rounded-full h-4">
+                    <div id="progressBar" class="bg-green-500 h-4 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                </div>
+                <p class="text-sm mt-2 font-medium" id="statusMsg">加油！旅程剛開始。</p>
+            </div>
+        </div>
+
+        <!-- 地圖區 -->
+        <div class="bg-white p-2 rounded-xl shadow-md">
+            <div id="map"></div>
+        </div>
+
+        <!-- 進度表參考 (可折疊) -->
+        <div class="mt-6 text-center">
+            <details class="group">
+                <summary class="list-none flex flex-wrap items-center cursor-pointer focus:outline-none bg-white p-4 rounded-lg shadow-sm">
+                    <span class="flex-1 text-left font-bold text-gray-700">📜 查看詳細進度表</span>
+                    <span class="text-blue-500">▼</span>
+                </summary>
+                <div class="bg-white mt-2 p-4 rounded-lg shadow-sm text-sm text-left overflow-x-auto">
+                    <table class="w-full table-auto">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600">
+                                <th class="p-2 text-left">目標</th>
+                                <th class="p-2 text-left">日期</th>
+                                <th class="p-2 text-right">累積步數</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scheduleTable">
+                            <!-- JS 自動生成 -->
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <!-- 引入 Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // --- 1. 資料設定 (根據你的表格) ---
+        const startDate = new Date("2024-12-08");
+        const milestones = [
+            { name: "淡水 (Start)", date: "2024-12-08", steps: 0, lat: 25.17, lng: 121.44 },
+            { name: "桃園", date: "2024-12-14", steps: 63000, lat: 24.99, lng: 121.30 },
+            { name: "新竹", date: "2024-12-21", steps: 154000, lat: 24.80, lng: 120.96 },
+            { name: "苗栗", date: "2024-12-28", steps: 224000, lat: 24.56, lng: 120.82 },
+            { name: "台中", date: "2025-01-04", steps: 322000, lat: 24.14, lng: 120.68 },
+            { name: "彰化", date: "2025-01-11", steps: 378000, lat: 24.08, lng: 120.54 },
+            { name: "雲林", date: "2025-01-18", steps: 455000, lat: 23.70, lng: 120.53 },
+            { name: "嘉義", date: "2025-01-25", steps: 511000, lat: 23.48, lng: 120.44 },
+            { name: "台南", date: "2025-02-01", steps: 609000, lat: 22.99, lng: 120.21 },
+            { name: "高雄", date: "2025-02-08", steps: 672000, lat: 22.62, lng: 120.30 },
+            { name: "墾丁 (Goal)", date: "2025-02-15", steps: 756000, lat: 21.94, lng: 120.79 }
+        ];
+
+        // --- 2. 初始化地圖 ---
+        const map = L.map('map').setView([23.5, 120.5], 7); // 視角設在台灣中心
+
+        // 加入 OpenStreetMap 圖層
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 18
+        }).addTo(map);
+
+        // 繪製路徑線 (Polyline)
+        const latlngs = milestones.map(m => [m.lat, m.lng]);
+        const polyline = L.polyline(latlngs, {color: '#3b82f6', weight: 5, opacity: 0.7}).addTo(map);
+
+        // 加入各站點標記
+        milestones.forEach(m => {
+            L.circleMarker([m.lat, m.lng], {
+                radius: 6,
+                fillColor: "#1d4ed8",
+                color: "#fff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map).bindPopup(`<b>${m.name}</b><br>目標: ${m.steps.toLocaleString()} 步<br>期限: ${m.date}`);
+        });
+
+        // 玩家標記 (小人)
+        const playerIcon = L.divIcon({
+            className: 'custom-icon',
+            html: '🚶',
+            iconSize: [30, 30],
+            iconAnchor: [15, 30]
+        });
+        let playerMarker = L.marker([25.17, 121.44], {icon: playerIcon}).addTo(map);
+
+        // --- 3. 邏輯運算 ---
+
+        // 初始化表格
+        const tableBody = document.getElementById('scheduleTable');
+        milestones.forEach((m, index) => {
+            if(index === 0) return; 
+            const row = `<tr>
+                <td class="p-2 border-b">${m.name}</td>
+                <td class="p-2 border-b text-xs text-gray-500">${m.date}</td>
+                <td class="p-2 border-b text-right font-mono">${m.steps.toLocaleString()}</td>
+            </tr>`;
+            tableBody.innerHTML += row;
+        });
+
+        // 讀取儲存的步數 (LocalStorage)
+        const savedSteps = localStorage.getItem('twWalkerSteps');
+        if (savedSteps) {
+            document.getElementById('inputSteps').value = savedSteps;
+            updateProgress(parseInt(savedSteps));
+        } else {
+            updateProgress(0);
+        }
+
+        // 更新進度主函式
+        function updateProgress(manualSteps = null) {
+            let steps = manualSteps !== null ? manualSteps : parseInt(document.getElementById('inputSteps').value) || 0;
+            
+            // 儲存到瀏覽器，下次不用重打
+            localStorage.setItem('twWalkerSteps', steps);
+
+            // 1. 找出目前區間
+            let currentLegStart = milestones[0];
+            let currentLegEnd = milestones[1];
+            let legIndex = 0;
+
+            for (let i = 0; i < milestones.length - 1; i++) {
+                if (steps >= milestones[i].steps) {
+                    currentLegStart = milestones[i];
+                    currentLegEnd = milestones[i+1];
+                    legIndex = i;
+                }
+            }
+
+            // 如果破關了
+            if (steps >= milestones[milestones.length - 1].steps) {
+                currentLegStart = milestones[milestones.length - 1];
+                currentLegEnd = milestones[milestones.length - 1];
+                document.getElementById('currentLocation').innerText = "🏆 已抵達墾丁！";
+                document.getElementById('statusMsg').innerText = "太強了！你已經完成了環島挑戰！";
+                document.getElementById('statusMsg').className = "text-sm mt-2 font-bold text-green-600";
+                document.getElementById('progressBar').style.width = "100%";
+                document.getElementById('progressPercent').innerText = "100%";
+                // 移到終點
+                playerMarker.setLatLng([milestones[milestones.length-1].lat, milestones[milestones.length-1].lng]);
+                return;
+            }
+
+            // 2. 計算區間百分比與座標插值
+            let legTotalSteps = currentLegEnd.steps - currentLegStart.steps;
+            let stepsInLeg = steps - currentLegStart.steps;
+            let percentInLeg = stepsInLeg / legTotalSteps;
+
+            // 線性插值計算座標
+            let currentLat = currentLegStart.lat + (currentLegEnd.lat - currentLegStart.lat) * percentInLeg;
+            let currentLng = currentLegStart.lng + (currentLegEnd.lng - currentLegStart.lng) * percentInLeg;
+
+            // 更新地圖位置
+            playerMarker.setLatLng([currentLat, currentLng]);
+            map.flyTo([currentLat, currentLng], 9); // 飛到當前位置
+
+            // 3. 更新文字介面
+            let nextCity = currentLegEnd.name;
+            document.getElementById('currentLocation').innerText = `前往 ${nextCity}`;
+            
+            let totalProgress = (steps / 756000 * 100).toFixed(1);
+            document.getElementById('progressPercent').innerText = `${totalProgress}%`;
+            document.getElementById('progressBar').style.width = `${totalProgress}%`;
+
+            // 4. 時間檢查邏輯
+            checkScheduleStatus(steps);
+        }
+
+        function checkScheduleStatus(currentSteps) {
+            const today = new Date();
+            // 模擬測試用 (你可以把下面這行註解掉，就會抓真實日期)
+            // const today = new Date("2024-12-25"); 
+
+            // 找出今天應該要在哪個階段
+            let targetStepsToday = 0;
+            let currentWeekTarget = null;
+            let weekInfo = "";
+
+            // 簡單判斷：如果今天日期大於某個milestone日期，那目標步數至少要是該milestone的步數
+            for (let i = 0; i < milestones.length; i++) {
+                let mDate = new Date(milestones[i].date);
+                if (today <= mDate) {
+                    currentWeekTarget = milestones[i];
+                    weekInfo = `${milestones[i].date} 前抵達 ${milestones[i].name}`;
+                    targetStepsToday = milestones[i].steps; 
+                    // 這裡可以做更細的線性推算，目前先簡單抓該週目標
+                    break;
+                }
+            }
+
+            if (!currentWeekTarget) {
+                // 日期超過最後一天
+                weekInfo = "活動已結束";
+            }
+
+            document.getElementById('currentWeekDate').innerText = weekInfo;
+
+            // 比較進度
+            // 這裡做一個簡單的每日估算：假設當週是線性增長
+            // 為了簡化，我們先比較「目前是否達到上週目標」或「距離本週目標還有多遠」
+            
+            const msgEl = document.getElementById('statusMsg');
+            if (currentWeekTarget) {
+                let remaining = currentWeekTarget.steps - currentSteps;
+                if (remaining <= 0) {
+                    msgEl.innerText = "🔥 狀態：超前進度！你走得非常快！";
+                    msgEl.className = "text-sm mt-2 font-bold text-green-600";
+                } else {
+                    msgEl.innerText = `⚡ 狀態：距離本週目標 (${currentWeekTarget.name}) 還有 ${remaining.toLocaleString()} 步`;
+                    msgEl.className = "text-sm mt-2 font-bold text-blue-600";
+                    
+                    // 如果落後太多 (這裡簡單判斷：如果連上一週的目標都沒達到)
+                    // 實際邏輯可依需求調整
+                }
+            }
+        }
+
+        // 頁面載入時執行一次
+        window.onload = function() {
+            // 如果有存檔則讀取，否則預設0
+            if(localStorage.getItem('twWalkerSteps')) {
+                updateProgress();
+            }
+        }
+
+    </script>
+</body>
+</html>
